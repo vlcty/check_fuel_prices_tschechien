@@ -1,0 +1,78 @@
+#!/usr/bin/perl
+use strict;
+use LWP::UserAgent;
+
+sub exitCritical {
+    printf("CRITICAL - %s\n", shift);
+    exit(2);
+}
+
+sub extractPriceFromLine {
+    my $line = shift;
+
+    if ( $line =~ />(\d{0,2},\d{1,2}).*<\/td>$/ ) {
+        my $price = $1;
+        $price =~ s/,/./;
+
+        return $price;
+    }
+    else {
+        exitCritical('Konnte Preis aus Zeile nicht extrahieren: ' . $line);
+    }
+}
+
+sub fetchPriceSheet {
+    my $ua = LWP::UserAgent->new();
+    $ua->agent('check_fuel_prices_tschechien');
+    $ua->timeout(10);
+
+    my $response = $ua->get('https://www.arcd.de/infos/auto-technik-und-mehr/spritpreise-in-europa.html');
+
+    if ( $response->is_success() ) {
+        return $response->decoded_content();
+    }
+    else {
+        exitCritical('Fehler beim holen der Preise: ' . $response->status_line);
+    }
+}
+
+sub splitPriceSheetAndExtractPrices {
+    my $priceSheet = fetchPriceSheet();
+
+    my $priceSuper = 0.0;
+    my $priceSuperPlus = 0.0;
+    my $priceDiesel = 0.0;
+
+    my $lineCounter = 0;
+    my @splittedSheet = split(/\n/, $priceSheet);
+
+    foreach my $currentLine ( @splittedSheet ) {
+        $lineCounter++;
+
+        if ( $currentLine =~ /Tschechien/ ) {
+            # Demo line:
+            # <td class="td-3" headers="col6108-3">1,17   </td>
+            $priceSuper =
+                extractPriceFromLine($splittedSheet[$lineCounter + 1]);
+            $priceSuperPlus =
+                extractPriceFromLine($splittedSheet[$lineCounter + 2]);
+            $priceDiesel =
+                extractPriceFromLine($splittedSheet[$lineCounter + 3]);
+
+            return ( $priceSuper, $priceSuperPlus, $priceDiesel );
+        }
+    }
+
+    exitCritical('Konnte Tschechien nicht finden');
+}
+
+sub main {
+    my ($priceSuper, $priceSuperPlus, $priceDiesel) =
+        splitPriceSheetAndExtractPrices();
+
+    printf("OK - Super: %.2f € Super Plus: %.2f € Diesel: %.2f €|price_super=%.2f price_super_plus=%.2f price_diesel=%.2f\n",
+        $priceSuper, $priceSuperPlus, $priceDiesel,
+        $priceSuper, $priceSuperPlus, $priceDiesel);
+}
+
+main();
